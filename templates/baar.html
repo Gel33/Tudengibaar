@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../styles/style.css">
+    <title>Bar Clerk</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+<h1>Choose a Drink</h1>
+<ul id="drink-list">
+    {% for drink in drinks %}
+    <li class="drink-item">
+        <span>{{ drink.name }} - ${{ drink.current_price }}</span>
+        <button class="buy-button" onclick="buyDrink('{{ drink.name }}')">Buy</button>
+    </li>
+    {% endfor %}
+</ul>
+<div id="notification" style="color: green; margin-top: 20px;"></div>
+
+<script>
+    function buyDrink(drinkName) {
+        $.ajax({
+            url: '/update_sales',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ drink_name: drinkName }),
+            success: function(response) {
+                if (response.success) {
+                    // Update the price in the UI
+                    $('#drink-list').find('.drink-item').each(function() {
+                        var itemName = $(this).find('span').text().split(' - ')[0];
+                        if (itemName === drinkName) {
+                            $(this).find('span').text(`${drinkName} - $${response.price}`);
+                        }
+                    });
+                    $('#notification').text(`Successfully bought ${drinkName}!`);
+                } else {
+                    $('#notification').text('Failed to purchase the drink. Please try again.');
+                }
+            },
+            error: function() {
+                $('#notification').text('An error occurred. Please try again.');
+            }
+        });
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <title>Drink Prices and History</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    .container {
+      display: flex;
+      flex-direction: row;
+      gap: 20px;
+      padding: 20px;
+    }
+    .price-list {
+      flex: 1;
+      max-width: 400px;  /* Limit width for price list */
+    }
+    .charts-grid {
+      flex: 2;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    canvas {
+      width: 100% !important;
+      height: 250px !important; /* Make the chart height consistent */
+      border-radius: 10px; /* Rounded corners for charts */
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px; /* Space below the table */
+    }
+    th, td {
+      padding: 12px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #f4f4f4;
+      font-size: 18px; /* Font size for headings */
+    }
+    .positive {
+      color: green;
+    }
+    .negative {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Price List -->
+  <div class="price-list">
+    <h1>Current Drink Prices</h1>
+    <table>
+      <thead>
+      <tr>
+        <th>Drink</th>
+        <th>Price</th>
+        <th>Sales Count</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for drink in drinks %}
+      <tr>
+        <td>{{ drink.name }}</td>
+        <td class="{% if drink.current_price > drink.min_price %}positive{% else %}negative{% endif %}">
+          ${{ drink.current_price }}
+        </td>
+        <td>{{ drink.sales_count }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Charts Grid -->
+  <div id="charts" class="charts-grid">
+    <canvas id="chart1"></canvas>
+    <canvas id="chart2"></canvas>
+    <canvas id="chart3"></canvas>
+    <canvas id="chart4"></canvas>
+  </div>
+</div>
+
+<script>
+  let chartInstances = [];
+  let currentGroupIndex = 0;
+  let intervalId;
+
+  function fetchNewPriceData(drink) {
+    const currentTime = new Date().toLocaleTimeString();  // Get the current time as HH:MM:SS
+
+    // Check if the drink has a recorded current price or fallback to base price
+    const newPrice = drink.current_price || drink.base_price;
+
+    return { time: currentTime, price: newPrice };
+  }
+
+  // Function to update the chart with new data
+  function updateChart(chart, drink) {
+    const { time, price } = fetchNewPriceData(drink);  // Fetch the latest price and time
+
+    // Add new data point to the chart
+    chart.data.labels.push(time);  // Add new time to x-axis labels
+    chart.data.datasets[0].data.push(price);  // Add new price to the dataset
+
+    // Update the chart to reflect new data
+    chart.update();
+  }
+
+  // Function to render the chart initially
+  function renderChart(ctx, drink, startTime) {
+    const initialData = fetchPriceHistory(drink, 10, startTime);  // Get initial data
+
+    // If there is no price history, initialize with base price
+    const initialPrices = initialData.prices.length ? initialData.prices : [drink.base_price];
+    const initialTimes = initialData.times.length ? initialData.times : [new Date().toLocaleTimeString()];
+
+    return new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: initialTimes,  // Initial times for the x-axis
+        datasets: [{
+          label: `${drink.name} Price`,
+          data: initialPrices,  // Initial prices for the y-axis
+          borderColor: 'rgba(75, 192, 192, 1)',
+          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          title: {
+            display: true,
+            text: `${drink.name} Price Over Time`,
+            font: {
+              size: 18 // Increase title font size for clarity
+            }
+          },
+          legend: {
+            display: false // Hide legend
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Price ($)',
+              font: {
+                size: 16 // Font size for y-axis title
+              }
+            }
+          },
+          x: {
+            title: {
+              display: true,
+              text: 'Time',
+              font: {
+                size: 16 // Font size for x-axis title
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // Update the renderNextFourCharts function to handle the updating process
+  function renderNextFourCharts(drinks, startTime) {
+    // Clear existing chart instances if they exist
+    chartInstances.forEach(chart => chart.destroy());
+
+    // Get the current group of 4 drinks
+    const start = currentGroupIndex * 4;
+    const group = drinks.slice(start, start + 4);
+
+    // Render and set up updating for each chart in the group
+    chartInstances = group.map((drink, index) => {
+      const ctx = document.getElementById(`chart${index + 1}`).getContext('2d');
+      const chart = renderChart(ctx, drink, startTime);  // Render the chart
+
+      // Set up interval to update the chart with new prices every 5 seconds
+      setInterval(() => {
+        updateChart(chart, drink);  // Add new data and update the chart
+      }, 5000);
+
+      return chart;
+    });
+
+    // Increment to next group or loop back to the start
+    currentGroupIndex = (currentGroupIndex + 1) % Math.ceil(drinks.length / 4);
+  }
+
+  // Load drink charts with continuous updates
+  function loadDrinkCharts() {
+    $.ajax({
+      url: '/api/drinks',  // Ensure this URL is correct
+      method: 'GET',
+      success: function(response) {
+        const drinks = response;
+        const startTime = new Date();  // Get the current time as the start time
+        renderNextFourCharts(drinks, startTime);  // Initial render of the first four charts
+
+        // Set up a timer to rotate the charts every 5 seconds
+        setInterval(() => {
+          renderNextFourCharts(drinks, startTime);  // Continue updating
+        }, 5000);
+      },
+      error: function(xhr, status, error) {
+        console.error("Error loading drink data:", status, error);  // Debugging line
+        alert('Error loading drink data.');
+      }
+    });
+  }
+
+  // Load charts on page load
+  $(document).ready(function() {
+    loadDrinkCharts();
+  });
+</script>
+
+</body>
+</html>
